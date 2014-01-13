@@ -6,22 +6,6 @@
 \documentclass[a4paper, 12pt, final]{article}
 
 \usepackage{xcolor} % paquet de couleurs
-\usepackage{listings} % paquet pour mettre le code infomatique
-% listing setting
-\lstset{language=lisp, 
-  % numbers=left, 
-  % numberstyle=\tiny, 
-  keywordstyle=\color{blue!70}, 
-  commentstyle=\color{red!50!green!50!blue!50}, 
-  % frame=shadowbox, 
-  rulesepcolor=\color{red!20!green!20!blue!20},
-  escapeinside=``, 
-  xleftmargin=2em,
-  xrightmargin=2em, 
-  aboveskip=1em, 
-  basicstyle=\ttfamily,
-  tabsize=2}
-% end listing setting
 
 \usepackage[utf8]{inputenc}
 \usepackage[francais]{babel}
@@ -34,10 +18,435 @@
   Rapport Projet Système Expert - A13}
 ]{hyperref}
 
-\title{Rapport du Projet Système Expert - IA01 - A13}
+\title{Rapport du Projet Système Expert\\
+  IA01- Automne 2013
+  \\Aide au choix des UVs en GI}
 \author{Caimin Xie et Florent Thévenet}
 
 \begin{document}
 \maketitle{}
+\newpage
+\tableofcontents
+\newpage
+\section{Problématique}
+
+\subsection{Aide au choix des uvs en GI}
+Le but de notre système expert est d'aider les étudiants en Génie Informatique à choisir
+leurs uvs, pour cela le système leur indiquera si il est possible de
+faire une certaine uv en fonction de leur profil et quelles uvs ils
+peuvent et/ou doivent faire.
+
+\section{Formalisation}
+\subsection{Besoins}
+Notre système est d'ordre 0+, par conséquent notre base de fait sera
+une liste associative (fait, valeur), et les prémisses seront de la
+forme (nom du fait, opérateur de comparaison, valeur attendue).\\
+\\
+Notre système a besoin d'avoir le profil de base de l'utilisateur :
+semestre, saison en cours et éventuellement origine de l'étudiant (dut
+ou utc) et filière mais on ne veut pas importuner l'utilisateur en lui
+posant des questions inutiles.\\
+Par conséquent il faut pouvoir poser des questions pendant le
+fonctionnement du moteur d'inférence, il y aura donc deux types de
+conclusions : des conclusions qui assignent une valeur à un fait dans
+la base et des conclusions qui demandent à l'utilisateur une valeur à
+entrer dans la base.\\\\
+
+\subsection{Représentation en Lisp}
+Une règle aura la forme suivante :
+(liste\_de\_prémisses conclusion1 conclusion2 ...)
+\vspace{1em}\\
+Une prémisse aura la forme suivante : (fait operateur valeur), où l'opérateur peut être
+\begin{itemize}
+\item un opérateur de comparaison mathématique (<
+  <= >= >)
+\item un opérateur de comparaison générale (= !=)
+\end{itemize}
+\vspace{1em}
+Une conclusion est une liste qui commence par un verbe d'action puis comporte les arguments nécessaires à l'action:
+Nous avons 2 types d'actions :
+\begin{itemize}
+\item set : Définit la valeur d'un fait dans la base de fait. Prend en paramètres le nom du fait et la valeur à stocker.
+\item ask : Demande à l'utilisateur une valeur. Prend en paramètres le fait à définir et la question à poser.
+\end{itemize}
+
+\section{Programme en Lisp}
+\subsection{Moteur d'inférence avec chaînage avant}
+Notre chaînage avant applique la stratégie suivante : choix de la première
+règle applicable, exécution des ses conclusions et ainsi de suite
+jusqu'à ce qu'il n'y ai plus de règles applicables. Chaque règle est utilisée au maximum une seule fois.\\
+Pour des raisons de complémentarité avec le moteur en chaînage arrière
+nous avons décidé de ne pas faire s'arrêter l'algorithme dès qu'il a
+trouvé le fait demandé mais d'exécuter toutes les règles applicables
+afin de renvoyer toutes les UVs obligatoires / conseillées / faisables
+selon le profil de l'étudiant.\\
+De par son fonctionnement cet algorithme peut parfois poser des
+questions inutiles à la détermination du but puisqu'il applique toutes les règles possibles. Ce
+point est résolu par le moteur en chaînage arrière.
+
+\begin{verbatim}
+Algorithme: verifier_avant (but BF BR) 
+Debut
+    Si (but appartient a la BF)
+        alors retourner (assoc but bf) // fin de fonction
+    Fin_si
+    
+    regles := BR
+    faits := BF
+    r := chercher_1ere_r_applicable (regles faits)
+    f := conclusion (r)
+    b := nil
+    Tant_que (r <> nil)
+        faire
+            regles := regles - r
+            faits := faits + f
+            r := chercher_1ere_r_applicable (regles faits)
+            f := appliquer_conclusions ((conclusion (r))
+            b := (assoc but faits)
+    Fin_tant_que
+    
+    retourner b
+
+Fin
+\end{verbatim}
+
+\subsection{Moteur d'inférence avec chaînage arrière}
+Contrairement au moteur précédent, ce moteur en chaînage arrière et
+profondeur d'abord permet uniquement de vérifier si une uv est
+faisable.\\
+Comme il applique uniquement les règles utiles à notre but cet
+algorithme ne pose jamais de questions inutiles contrairement à
+l'algorithme en chaînage avant.\\
+Bien sûr il est impossible de lister les uvs faisables par l'étudiant avec ce moteur
+à moins de le rappeler pour toutes les uvs possibles, mais cette
+fonction est remplie par le moteur en chaînage avant donc ce n'est pas
+un problème.\\
+Cela montre qu'il peut être utile d'avoir plusieurs moteurs
+d'inférence en fonction de ce que l'on veut obtenir.
+
+\subsubsection{\texttt{verifier\_arriere}}
+La fonction d'entrée pour le moteur en chaînage arrière, on lui passe en argument l'uv à rechercher, le
+profil de l'étudiant (base de faits) et la base de règles.\\
+Cette fonction est nécessaire dans notre cas puisque nous recherchons
+la valeur d'un fait, et pas à vérifier si un fait a une valeur donnée
+comme dans un chaînage arrière classique.\\
+La fonction ``classique'' de chaînage arrière est \texttt{verifier-premisse-arriere}.
+
+\subsection{fonctions de services}
+\subsubsection{\texttt{verif\_premisse\_simple (premisse fait)}}
+Cette fonction permet de vérifier une seule prémisse à partir d'un fait. Elle retourne le fait si la prémisse est vérifiée, sinon nil. Il s'agit d'une simple comparaison : si les deux arguments ont le même nom, alors on vérifie leur valeur. On utilise le bloc \texttt{cond} pour réaliser les différents opérateurs.
+
+\begin{verbatim}
+(defun verif_premisse_simple (premisse fait)
+  (if (not (equal (car premisse) (car fait)))
+      (return-from verif_premisse_simple nil))
+  (let ((v_p (caddr premisse)) 
+    (v_f (cadr fait))
+    (op (cadr premisse)))
+    (cond 
+      ((and (equal op '>) (> v_f v_p))
+       fait)
+      ((and (equal op '>=) (>= v_f v_p))
+       fait)
+      ((and (equal op '=) (equal v_f v_p))
+       fait)
+      ((and (equal op '<) (< v_f v_p))
+       fait)
+      ((and (equal op '<=) (<= v_f v_p))
+       fait)
+      ((and (equal op '!=) (not (equal v_f v_p)))
+       fait)
+      (t nil))))
+\end{verbatim}
+
+\subsubsection{\texttt{verif\_premisse (premisses faits)}}
+En utilisant la fonction précédente, on peut maintenant vérifier plusieurs prémisses à partir d'une liste de faits.
+
+\begin{verbatim}
+Algorithme:
+Debut
+    Si (length faits) < (length premisses)
+        alors retourner nil    // fin de fonction
+    Fin_si 
+    
+    ok := vrai
+    p := (car premisses)
+    Tant_que (p <> nil) ou (ok=vrai)
+        faire
+            res := faux
+            f := (car faits)
+            Tant_que (f <> nil) ou (res <> vrai)
+                faire
+                    res := (or res (verif_premisse_simple p f))
+                    f := (car (cdr faits))
+            Fin_tan_que
+            ok := (and ok res)
+            p := (car (cdr premisses))
+    Fin_tant_que
+    
+    retourner ok
+Fin
+\end{verbatim}
+
+\subsubsection{\texttt{verif\_regle (regle bf)}}
+Elle vérifie si une regèle est applicable à partir de la base de faits :
+une règle est composée d'une liste de prémisses suivie par des
+conclusions. Si toutes les prémisses de la règle sont vérifiées dans
+la base de faits par la fonction \texttt{verif\_premisse}, elle
+retourne les conclusions de la règle; sinon elle retourne nil.
+
+\subsubsection{\texttt{chercher\_regle (br bf)}}
+La fonction \texttt{chercher\_regle} parcourt la base de règle pour trouver la premier règle applicable.
+
+\subsubsection{\texttt{process-conclusions (conclusions BF)}}
+Cette fonction applique les conclusions passées en premier argument à
+la base de faits puis renvoie la base de fait modifiée.
+
+\begin{verbatim}
+Algorithme: process-conclusions (conclusions BF) 
+Pour chaque conclusion dans conclusions
+    Faire
+        si fait(conclusion) n'est pas dans BF
+        Faire
+            resultat = process-one-conclusion(conclusion)
+            si resultat faire
+                BF + resultat
+            Fin_si
+       Fin_si
+Fin_pour
+
+Algorithme: process-one-conclusion (conclusion) 
+si verbe-action = set Faire
+    renvoyer (list fait-cible valeur)
+sinon si verbe-action = ask Faire
+    renvoyer (list fait-cible poser-question())
+\end{verbatim}
+
+\subsubsection{\texttt{regles-possibles}}
+Renvoie toutes les règles qui définissent le fait passé en paramètre.
+
+\subsubsection{\texttt{regle-define}}
+Si l'une des conclusions de la règle passée en argument définit le
+fait passé en argument la fonction renvoie cette conclusion, sinon
+elle renvoie nil.
+
+\subsubsection{\texttt{fait-set?}}
+
+Récupère le couple (fait valeur)
+dans la base de faits à partir du fait passé en argument.\\
+Renvoie nil si le fait n'est pas défini.
+
+\subsubsection{\texttt{premisses-verifiees?}}
+
+Cette fonction remplit le même rôle que ``verifier-regle'' dans le
+TD5 : Elle vérifie si toutes les prémisses d'un règle sont vérifiées.
+
+\begin{verbatim}
+Algorithme : premisses-verifiees? (regle bf br)
+Pour chaque premisses dans premisses(regles)
+Faire
+    Si Non ( verif_premisse_simple(premisse, fait(premisse), bf) )
+    Faire
+        Si Non ( verifier-premisse-arrier(premisse, bf, br)
+        Faire
+            renvoyer NIL
+        Fin si
+    Fin si
+Fin Pour
+Renvoyer ok
+\end{verbatim}
+
+\subsubsection{\texttt{verifier-premisse-arriere}}
+Cette fonction remplit le même rôle que ``verifier-fait'' dans le
+TD5 : Elle vérifie si une prémisse peut être vérifiée 
+\begin{verbatim}
+Algorithme  verifier-premisse-arriere(premisse, br, bf)
+Si fait-existe(fait(premisse), bf)
+Faire
+    renvoyer verif_premisse_simple(premisse, assoc(fait(premisse), bf))
+Fin si
+Pour chaque regle dans br
+Faire
+    conclusion := regle-define(fait(premisse), regle)
+    si conclusion
+    Faire
+        ; on regarde si on a le droit d'appliquer cette regle
+        ; la recursion se fait ici
+        si premisses-verifiees(regle, bf, br)
+        Faire
+          ; on execute la conclusion pour voir si elle definie
+          ; bien la valeur attendue
+          ; on peut poser une question a l'utilisateur a ce moment
+          couple_resultat := process-one-conclusion(conclusion)
+          si verif_premisse_simple(premisse, couple_resultat)
+          Faire
+              bf += couple_resultat
+              renvoyer couple_resultat
+          Fin si
+        Fin si
+    Fin si
+Fin Pour
+Renvoyer NIL
+\end{verbatim}
+
+\section{Utilisation}
+\label{sec:utilisation}
+
+\subsection{Utilisation basique}
+\label{sec:utilisation-basique}
+
+Selon les résultats à afficher on peut utiliser plusieurs fonctions
+qui prennent toutes les mêmes arguments (uv\_recherchee base\_de\_faits base\_de\_regles)
+:
+\begin{itemize}
+\item \texttt{verifier\_arriere} renvoie l'uv trouvée avec sa
+  valeur associée ou nil si il est impossible de la faire.
+\item \texttt{verifier\_avant} renvoie juste l'uv trouvée avec sa
+  valeur associée ou nil si il est impossible de la faire.
+\item \texttt{verifier\_avant\_} renvoie l'uv trouvée ainsi
+  que la base de fait. Le résultat est à passer en argument à la fonction
+  \texttt{resultat\_complet} qui affiche de façon lisible le résultat, les
+  uvs obligatoires, conseillées et faisables.
+\end{itemize}
+
+\subsection{Avec saisie directe du profil}
+\label{sec:avec-saisie-directe}
+
+La profil de l'étudiant peut être saisi dynamiquement grâce à la
+fonction \texttt{ask\_profil}.\\
+Cette fonction renvoie une base de faits.
+
+\begin{verbatim}
+(verifier_arriere 'sr04 (ask_profil) *br*)
+> Quel est votre semestre ? 1
+> Somme nous au Printemps (P) ou en Automne (A) ? P
+NIL
+
+(verifier_arriere 'sr04 (ask_profil) *br*)
+> Quel est votre semestre ? 4
+> Somme nous au Printemps (P) ou en Automne (A) ? A
+> Quelle est votre filiere ? SRI
+(SR04 OBLIGATOIRE)
+
+(verifier_avant 'nf16 (ask_profil) *br*)
+> Quel est votre semestre ? 4
+> Somme nous au Printemps (P) ou en Automne (A) ? A
+> Quelle est votre filiere ? SRI
+NIL
+
+(resultat_complet (verifier_avant_ 'nf16 (ask_profil) *br*))
+> Quel est votre semestre ? 1
+> Somme nous au Printemps (P) ou en Automne (A) ? P
+> Venez vous de DUT ou de TC ? TC
+* UV choisie : (NF16 OBLIGATOIRE)
+* UVs obligatoires:
+LO21 : 6 credits TM
+NF16 : 6 credits CS
+* UVs faisables:
+SY02 : 6 credits CS
+MT12 : 6 credits CS
+SY14 : 6 credits CS
+SR02 : 6 credits CS
+RO04 : 6 credits CS
+RO03 : 6 credits CS
+LO22 : 6 credits TM
+SY06 : 6 credits CS
+MT10 : 6 credits CS
+IA02 : 6 credits CS
+FQ01 : 6 credits TM
+\end{verbatim}
+
+\subsection{Avec un profil pré-enregistré}
+\label{sec:avec-un-profil}
+
+On peut aussi enregistrer son profil dans un fichier texte.\\
+Voici par exemple notre profil de test p3 :
+\begin{verbatim}
+semestre
+4
+saison
+a
+filiere
+strie
+uv_acquise
+nf16
+lo21
+end_uv
+end
+\end{verbatim}
+Où seuls les champs semestre et saison sont obligatoires.\\
+
+Pour charger le profil on utilise la fonction \texttt{load\_profil}
+qui prend en argument le nom du profil (sous la forme d'un symbole) et
+crée la base de fait à partir du fichier texte.\\
+Le moteur d'inférence pose toujours des questions si besoin.\\
+
+\begin{verbatim}
+  (resultat_complet (verifier_avant_ 'sy27 (load_profil 'p3) *br*))
+  * UV choisie : (SY27 OBLIGATOIRE)
+  * UVs obligatoires:
+  SY27 : 6 credits TM
+  * UVs faisables:
+  LO23 : 6 credits TM
+  RV01 : 6 credits TM
+  LO12 : 6 credits TM
+  GE38 : 6 credits TM
+  FQ01 : 6 credits TM
+  GE37 : 6 credits TM
+
+  (resultat_complet (verifier_avant_ 'fq01 (load_profil 'p3) *br*))
+  * UV choisie : (FQ01 FAISABLE)
+  * UVs obligatoires:
+  SY27 : 6 credits TM
+  * UVs faisables:
+  LO23 : 6 credits TM
+  RV01 : 6 credits TM
+  LO12 : 6 credits TM
+  GE38 : 6 credits TM
+  FQ01 : 6 credits TM
+  GE37 : 6 credits TM
+
+  (resultat_complet (verifier_avant_ 'nf16 (load_profil 'p3) *br*))
+  * UV choisie : (NF16 FAIT)
+  * UVs obligatoires:
+  SY27 : 6 credits TM
+  * UVs faisables:
+  LO23 : 6 credits TM
+  RV01 : 6 credits TM
+  LO12 : 6 credits TM
+  GE38 : 6 credits TM
+  FQ01 : 6 credits TM
+  GE37 : 6 credits TM
+
+  (resultat_complet (verifier_avant_ 'sr04 (load_profil 'p3) *br*))
+  * UV choisie impossible à faire
+  * UVs obligatoires:
+  SY27 : 6 credits TM
+  * UVs faisables:
+  LO23 : 6 credits TM
+  RV01 : 6 credits TM
+  LO12 : 6 credits TM
+  GE38 : 6 credits TM
+  FQ01 : 6 credits TM
+  GE37 : 6 credits TM
+
+  Si on modifie le profil p3 pour supprimer la filiere voici ce qu'il
+  se passe :
+  (resultat_complet (verifier_avant_ 'sr04 (load_profil 'p3) *br*))
+  > Quelle est votre filiere ? SRI
+  * UV choisie : (SR04 OBLIGATOIRE)
+  * UVs obligatoires:
+  SR06 : 6 credits TM
+  SR05 : 6 credits CS
+  SR04 : 6 credits CS
+  * UVs faisables:
+  LO23 : 6 credits TM
+  RV01 : 6 credits TM
+  LO12 : 6 credits TM
+  GE38 : 6 credits TM
+  FQ01 : 6 credits TM
+  GE37 : 6 credits TM
+
+\end{verbatim}
 
 \end{document}
